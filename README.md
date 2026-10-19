@@ -9,7 +9,7 @@ Built for a BSc. Computer Science / Software Engineering final year project.
 ## Tech Stack
 - **Frontend:** HTML, CSS, vanilla JavaScript, Leaflet.js (maps) — no framework needed
 - **Backend:** Node.js + Express (REST API)
-- **Database:** SQLite (single file, stored on a Railway volume)
+- **Database:** SQLite (built into Node 22.13+, single file on a Railway volume)
 - **Auth:** JWT + bcrypt password hashing
 
 ## Project Structure

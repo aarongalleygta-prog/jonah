@@ -4,7 +4,8 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+// Built into Node (22.13+), so there is nothing native to download or compile.
+const { DatabaseSync } = require('node:sqlite');
 
 // Railway sets RAILWAY_VOLUME_MOUNT_PATH automatically when a volume is attached.
 const dataDir =
@@ -19,9 +20,9 @@ if (process.env.RAILWAY_ENVIRONMENT && !process.env.DATA_DIR && !process.env.RAI
   console.warn('WARNING: no Railway volume is attached. The database will be wiped on every redeploy. Add a volume to this service.');
 }
 
-const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+const db = new DatabaseSync(dbPath);
+db.exec('PRAGMA journal_mode = WAL;');
+db.exec('PRAGMA foreign_keys = ON;');
 console.log(`Using SQLite database at ${dbPath}`);
 
 function normalise(params) {
@@ -32,7 +33,7 @@ const pool = {
   async query(sql, params = []) {
     const stmt = db.prepare(sql);
     const args = normalise(params);
-    if (stmt.reader) {
+    if (/^\s*(select|with|pragma)\b/i.test(sql)) {
       return [stmt.all(...args)];
     }
     const info = stmt.run(...args);
