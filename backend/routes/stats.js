@@ -44,9 +44,9 @@ router.get('/by-type', async (req, res) => {
 router.get('/by-month', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT DATE_FORMAT(created_at, '%Y-%m') AS month, COUNT(*) AS count
+      SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) AS count
       FROM emergencies
-      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+      WHERE created_at >= date('now', '-12 months')
       GROUP BY month
       ORDER BY month ASC
     `);
@@ -61,7 +61,7 @@ router.get('/by-month', async (req, res) => {
 router.get('/response-time', async (req, res) => {
   try {
     const [[row]] = await pool.query(`
-      SELECT AVG(TIMESTAMPDIFF(MINUTE, created_at, resolved_at)) AS avg_minutes
+      SELECT AVG((julianday(resolved_at) - julianday(created_at)) * 1440.0) AS avg_minutes
       FROM emergencies
       WHERE resolved_at IS NOT NULL
     `);

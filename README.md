@@ -9,20 +9,19 @@ Built for a BSc. Computer Science / Software Engineering final year project.
 ## Tech Stack
 - **Frontend:** HTML, CSS, vanilla JavaScript, Leaflet.js (maps) — no framework needed
 - **Backend:** Node.js + Express (REST API)
-- **Database:** MySQL / MariaDB
+- **Database:** SQLite (single file, stored on a Railway volume)
 - **Auth:** JWT + bcrypt password hashing
 
 ## Project Structure
 ```
 smart-emergency-response/
 ├── backend/
-│   ├── config/db.js        MySQL connection pool
+│   ├── config/db.js        SQLite connection (file on the volume)
+│   ├── config/migrate.js   creates tables + seeds the admin on startup
 │   ├── middleware/auth.js  JWT verification + role guard
 │   ├── routes/             auth.js, emergencies.js, stats.js
 │   ├── server.js           app entry point
 │   └── .env.example        copy to .env and fill in your DB details
-├── database/
-│   └── schema.sql          run this once to create tables + seed an admin
 └── frontend/
     ├── index.html          citizen: report an emergency
     ├── login.html / register.html
@@ -33,36 +32,15 @@ smart-emergency-response/
     └── vendor/leaflet/      Leaflet library (self-hosted, no CDN needed)
 ```
 
-## Setup
-
-### 1. Install MySQL/MariaDB and create the database
-```bash
-mysql -u root -p < database/schema.sql
-```
-This creates the `emergency_response` database, its tables, and seeds one
-admin account: **admin@emergency.local / Admin@123**.
-
-Create a dedicated app user rather than using `root` directly:
-```sql
-CREATE USER 'appuser'@'%' IDENTIFIED BY 'your_password_here';
-GRANT ALL PRIVILEGES ON emergency_response.* TO 'appuser'@'%';
-FLUSH PRIVILEGES;
-```
-
-### 2. Configure the backend
+## Local setup
 ```bash
 cd backend
-cp .env.example .env
-# edit .env with your DB_USER / DB_PASSWORD / JWT_SECRET
+cp .env.example .env     # set JWT_SECRET (and optionally ADMIN_PASSWORD)
 npm install
-npm run dev      # or: npm start
+npm start
 ```
-The server runs on **http://localhost:5000** and also serves the frontend,
-so you don't need a separate frontend server.
-
-### 3. Open the app
-Visit `http://localhost:5000` in your browser. Register a citizen account,
-or log in as the seeded admin to see the dashboard.
+Visit **http://localhost:5000**. Tables are created automatically in `backend/data/emergency.db`
+and an admin is seeded: **admin@emergency.local / Admin@123** (or your `ADMIN_PASSWORD`).
 
 ## Deploying to Railway (via GitHub)
 
@@ -76,19 +54,18 @@ or log in as the seeded admin to see the dashboard.
    git push -u origin main
    ```
 2. In Railway: **New Project → Deploy from GitHub repo** and pick the repo. Leave the root directory as `/`.
-3. In the same project: **New → Database → Add MySQL**.
-4. Open your app service → **Variables** and add:
+3. **Add a volume** to that service: right-click the service on the canvas (or press `Ctrl/Cmd+K`) → **Add Volume**, mount path `/data`.
+4. Open the service → **Variables** and add:
    | Variable | Value |
    |---|---|
-   | `MYSQL_URL` | `${{MySQL.MYSQL_URL}}` (reference to the MySQL service; rename `MySQL` if yours differs) |
    | `JWT_SECRET` | a long random string, e.g. `openssl rand -hex 32` |
    | `ADMIN_PASSWORD` | a strong password for the seeded admin (set before the first deploy) |
    | `ADMIN_EMAIL` | optional, defaults to `admin@emergency.local` |
-5. Open your service → **Settings → Networking → Generate Domain**.
+5. **Settings → Networking → Generate Domain**.
 
-Tables are created automatically on startup and an admin account is seeded if none
-exists, so you do not need to run `schema.sql` on Railway. Health check: `/api/health`.
-Browser geolocation requires HTTPS, which Railway's generated domain provides.
+Railway sets `RAILWAY_VOLUME_MOUNT_PATH` automatically, and the app stores its database
+there, so data survives redeploys. Keep the service at **one replica** (SQLite is a single-file database).
+Health check: `/api/health`. Browser geolocation needs HTTPS, which the Railway domain provides.
 
 ## How Priority Classification Works
 `backend/routes/emergencies.js` contains `classifyPriority(type, description)`:

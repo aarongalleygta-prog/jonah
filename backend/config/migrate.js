@@ -1,56 +1,58 @@
 // Creates tables (if missing) and seeds the first admin account.
-// Runs automatically on every server start, so a fresh Railway MySQL
-// database is ready without running schema.sql by hand. Safe to re-run.
+// Runs on every server start. Safe to re-run.
 const bcrypt = require('bcryptjs');
 const pool = require('./db');
 
-const TABLES = [
-  `CREATE TABLE IF NOT EXISTS users (
-    id                 INT AUTO_INCREMENT PRIMARY KEY,
-    full_name          VARCHAR(100) NOT NULL,
-    email              VARCHAR(150) NOT NULL UNIQUE,
-    phone              VARCHAR(20)  NOT NULL,
-    password_hash      VARCHAR(255) NOT NULL,
-    emergency_contact  VARCHAR(20)  NULL,
-    role               ENUM('citizen','responder','admin') NOT NULL DEFAULT 'citizen',
-    responder_category ENUM('medical','fire','security','accident','flood','other') NULL,
-    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )`,
-  `CREATE TABLE IF NOT EXISTS emergencies (
-    id           INT AUTO_INCREMENT PRIMARY KEY,
-    reporter_id  INT NOT NULL,
-    type         ENUM('medical','fire','security','accident','flood','other') NOT NULL,
-    description  TEXT NULL,
-    latitude     DECIMAL(10, 7) NOT NULL,
-    longitude    DECIMAL(10, 7) NOT NULL,
-    address_text VARCHAR(255) NULL,
-    priority     ENUM('critical','high','medium','low') NOT NULL DEFAULT 'medium',
-    status       ENUM('reported','accepted','responding','resolved') NOT NULL DEFAULT 'reported',
-    assigned_to  INT NULL,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    resolved_at  TIMESTAMP NULL,
-    FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL,
-    INDEX idx_emergencies_status (status),
-    INDEX idx_emergencies_type (type),
-    INDEX idx_emergencies_created (created_at)
-  )`,
-  `CREATE TABLE IF NOT EXISTS status_history (
-    id           INT AUTO_INCREMENT PRIMARY KEY,
-    emergency_id INT NOT NULL,
-    old_status   VARCHAR(20) NULL,
-    new_status   VARCHAR(20) NOT NULL,
-    changed_by   INT NULL,
-    changed_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (emergency_id) REFERENCES emergencies(id) ON DELETE CASCADE,
-    FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL
-  )`,
-];
+const NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS users (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name          TEXT NOT NULL,
+  email              TEXT NOT NULL UNIQUE,
+  phone              TEXT NOT NULL,
+  password_hash      TEXT NOT NULL,
+  emergency_contact  TEXT NULL,
+  role               TEXT NOT NULL DEFAULT 'citizen' CHECK (role IN ('citizen','responder','admin')),
+  responder_category TEXT NULL CHECK (responder_category IN ('medical','fire','security','accident','flood','other')),
+  created_at         TEXT DEFAULT (${NOW})
+);
+
+CREATE TABLE IF NOT EXISTS emergencies (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  reporter_id  INTEGER NOT NULL,
+  type         TEXT NOT NULL CHECK (type IN ('medical','fire','security','accident','flood','other')),
+  description  TEXT NULL,
+  latitude     REAL NOT NULL,
+  longitude    REAL NOT NULL,
+  address_text TEXT NULL,
+  priority     TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('critical','high','medium','low')),
+  status       TEXT NOT NULL DEFAULT 'reported' CHECK (status IN ('reported','accepted','responding','resolved')),
+  assigned_to  INTEGER NULL,
+  created_at   TEXT DEFAULT (${NOW}),
+  resolved_at  TEXT NULL,
+  FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS status_history (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  emergency_id INTEGER NOT NULL,
+  old_status   TEXT NULL,
+  new_status   TEXT NOT NULL,
+  changed_by   INTEGER NULL,
+  changed_at   TEXT DEFAULT (${NOW}),
+  FOREIGN KEY (emergency_id) REFERENCES emergencies(id) ON DELETE CASCADE,
+  FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_emergencies_status  ON emergencies(status);
+CREATE INDEX IF NOT EXISTS idx_emergencies_type    ON emergencies(type);
+CREATE INDEX IF NOT EXISTS idx_emergencies_created ON emergencies(created_at);
+`;
 
 async function migrate() {
-  for (const sql of TABLES) {
-    await pool.query(sql);
-  }
+  pool.exec(SCHEMA);
 
   // Seed the first admin only if no admin exists yet.
   const [admins] = await pool.query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
@@ -68,21 +70,7 @@ async function migrate() {
       console.warn('WARNING: using the default admin password. Set ADMIN_PASSWORD (before first deploy) or change it right away.');
     }
   }
+  console.log('Database ready.');
 }
 
-// The database service may still be starting when the app boots, so retry.
-async function migrateWithRetry(attempts = 10, delayMs = 3000) {
-  for (let i = 1; i <= attempts; i++) {
-    try {
-      await migrate();
-      console.log('Database ready.');
-      return;
-    } catch (err) {
-      console.error(`Database not ready (attempt ${i}/${attempts}): ${err.message}`);
-      if (i === attempts) throw err;
-      await new Promise((r) => setTimeout(r, delayMs));
-    }
-  }
-}
-
-module.exports = migrateWithRetry;
+module.exports = migrate;

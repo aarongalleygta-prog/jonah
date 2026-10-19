@@ -102,7 +102,7 @@ router.get('/', requireAuth, requireRole('admin', 'responder'), async (req, res)
     if (type) { query += ' AND e.type = ?'; params.push(type); }
     if (priority) { query += ' AND e.priority = ?'; params.push(priority); }
 
-    query += ' ORDER BY FIELD(e.priority, "critical","high","medium","low"), e.created_at DESC';
+    query += " ORDER BY CASE e.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, e.created_at DESC";
 
     const [rows] = await pool.query(query, params);
     res.json(rows);

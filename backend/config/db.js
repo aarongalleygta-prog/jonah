@@ -1,32 +1,44 @@
-// Database connection pool
-// Works locally (DB_* variables) and on Railway, which injects MYSQL_URL
-// (and MYSQLHOST / MYSQLPORT / MYSQLUSER / MYSQLPASSWORD / MYSQLDATABASE)
-// when you add a MySQL service to the project.
+// SQLite database stored on disk (on Railway: on the attached volume).
+// Exposes pool.query(sql, params) -> [rows] for SELECTs, or
+// [{ insertId, affectedRows }] for INSERT/UPDATE/DELETE, so route code stays simple.
 require('dotenv').config();
-const mysql = require('mysql2/promise');
+const fs = require('fs');
+const path = require('path');
+const Database = require('better-sqlite3');
 
-const common = {
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  // Return DATETIME/TIMESTAMP in a consistent way regardless of server timezone
-  timezone: 'Z',
-};
+// Railway sets RAILWAY_VOLUME_MOUNT_PATH automatically when a volume is attached.
+const dataDir =
+  process.env.DATA_DIR ||
+  process.env.RAILWAY_VOLUME_MOUNT_PATH ||
+  path.join(__dirname, '..', 'data');
 
-let pool;
-const url = process.env.MYSQL_URL || process.env.DATABASE_URL;
+fs.mkdirSync(dataDir, { recursive: true });
+const dbPath = path.join(dataDir, 'emergency.db');
 
-if (url) {
-  pool = mysql.createPool({ uri: url, ...common });
-} else {
-  pool = mysql.createPool({
-    host: process.env.DB_HOST || process.env.MYSQLHOST || 'localhost',
-    port: Number(process.env.DB_PORT || process.env.MYSQLPORT || 3306),
-    user: process.env.DB_USER || process.env.MYSQLUSER || 'root',
-    password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || '',
-    database: process.env.DB_NAME || process.env.MYSQLDATABASE || 'emergency_response',
-    ...common,
-  });
+if (process.env.RAILWAY_ENVIRONMENT && !process.env.DATA_DIR && !process.env.RAILWAY_VOLUME_MOUNT_PATH) {
+  console.warn('WARNING: no Railway volume is attached. The database will be wiped on every redeploy. Add a volume to this service.');
 }
+
+const db = new Database(dbPath);
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+console.log(`Using SQLite database at ${dbPath}`);
+
+function normalise(params) {
+  return params.map((p) => (p instanceof Date ? p.toISOString() : p === undefined ? null : p));
+}
+
+const pool = {
+  async query(sql, params = []) {
+    const stmt = db.prepare(sql);
+    const args = normalise(params);
+    if (stmt.reader) {
+      return [stmt.all(...args)];
+    }
+    const info = stmt.run(...args);
+    return [{ insertId: Number(info.lastInsertRowid), affectedRows: info.changes }];
+  },
+  exec: (sql) => db.exec(sql),
+};
 
 module.exports = pool;
