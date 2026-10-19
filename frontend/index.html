@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Emergency Response — Report an Emergency</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="dot"></span> Smart Emergency Response</div>
+  <nav></nav>
+</div>
+
+<div class="container">
+
+  <div class="hero">
+    <h1>🚨 Report an Emergency</h1>
+    <p>Select what's happening, confirm your location, and submit. Help will be notified immediately.</p>
+  </div>
+
+  <div id="loginNotice" class="alert alert-error hidden">
+    You need to <a href="login.html">log in</a> or <a href="register.html">register</a> before reporting an emergency.
+  </div>
+
+  <div id="alertBox"></div>
+
+  <form id="reportForm">
+    <div class="category-grid" id="categoryGrid">
+      <div class="category-card" data-type="medical"><span class="icon">🚑</span><span class="label">Medical</span></div>
+      <div class="category-card" data-type="fire"><span class="icon">🔥</span><span class="label">Fire</span></div>
+      <div class="category-card" data-type="security"><span class="icon">🚔</span><span class="label">Security</span></div>
+      <div class="category-card" data-type="accident"><span class="icon">🚗</span><span class="label">Accident</span></div>
+      <div class="category-card" data-type="flood"><span class="icon">🌊</span><span class="label">Flood</span></div>
+      <div class="category-card" data-type="other"><span class="icon">⚠️</span><span class="label">Other</span></div>
+    </div>
+
+    <div class="panel">
+      <label for="description">Briefly describe what's happening</label>
+      <textarea id="description" rows="3" placeholder="e.g. Two-car collision, one person trapped inside"></textarea>
+
+      <label>Your location</label>
+      <p class="form-note" style="text-align:left;margin-top:0;">We use your device's GPS. Drag the pin if it's slightly off.</p>
+      <div id="map"></div>
+      <p id="locationStatus" class="form-note" style="text-align:left;">Getting your location…</p>
+
+      <button type="submit" class="btn btn-danger btn-block mt-lg" id="submitBtn" disabled>
+        Submit Emergency Report
+      </button>
+    </div>
+  </form>
+
+</div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="js/app.js"></script>
+<script src="js/map.js"></script>
+<script>
+let selectedType = null;
+let pickerMap = null;
+let pickerMarker = null;
+
+// Gate the page behind login
+const session = getSession();
+if (!session) {
+  document.getElementById('loginNotice').classList.remove('hidden');
+  document.getElementById('reportForm').classList.add('hidden');
+} else {
+  initLocation();
+}
+
+// Category selection
+document.querySelectorAll('.category-card').forEach((card) => {
+  card.addEventListener('click', () => {
+    document.querySelectorAll('.category-card').forEach((c) => c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedType = card.dataset.type;
+    checkReady();
+  });
+});
+
+async function initLocation() {
+  try {
+    const { lat, lng } = await getCurrentPosition();
+    const picker = createPickerMap('map', lat, lng);
+    pickerMap = picker.map;
+    pickerMarker = picker.marker;
+    document.getElementById('locationStatus').textContent = 'Location found. Drag the pin to fine-tune it if needed.';
+    checkReady();
+  } catch (err) {
+    document.getElementById('locationStatus').textContent = err.message + ' You can still submit once location access is allowed.';
+  }
+}
+
+function checkReady() {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = !(selectedType && pickerMarker);
+}
+
+document.getElementById('reportForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!selectedType || !pickerMarker) return;
+
+  const { lat, lng } = pickerMarker.getLatLng();
+  const description = document.getElementById('description').value.trim();
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = 'Submitting…';
+
+  try {
+    const data = await apiRequest('/api/emergencies', 'POST', {
+      type: selectedType,
+      description,
+      latitude: lat,
+      longitude: lng,
+    });
+    showAlert('alertBox', `Reported successfully. Priority: ${data.priority.toUpperCase()}. Help is being notified.`, 'success');
+    document.getElementById('reportForm').reset();
+    document.querySelectorAll('.category-card').forEach((c) => c.classList.remove('selected'));
+    selectedType = null;
+  } catch (err) {
+    showAlert('alertBox', err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit Emergency Report';
+  }
+});
+</script>
+</body>
+</html>

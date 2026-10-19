@@ -1,0 +1,11 @@
+{
+  "name": "smart-emergency-response",
+  "version": "1.0.0",
+  "description": "Smart Emergency Response & Community Help System",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "postinstall": "npm --prefix backend ci --omit=dev",
+    "start": "node backend/server.js"
+  }
+}

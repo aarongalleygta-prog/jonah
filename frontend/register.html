@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register — Smart Emergency Response</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="dot"></span> Smart Emergency Response</div>
+  <nav>
+    <a href="index.html">Report</a>
+    <a href="login.html">Login</a>
+  </nav>
+</div>
+
+<div class="auth-shell">
+  <h2 class="text-center">Create your account</h2>
+  <p class="form-note" style="margin-top:-6px;">Register once, then report emergencies in seconds.</p>
+
+  <div id="alertBox"></div>
+
+  <form id="registerForm">
+    <label for="fullName">Full name</label>
+    <input type="text" id="fullName" required placeholder="e.g. Jonathan Mensah">
+
+    <label for="email">Email</label>
+    <input type="email" id="email" required placeholder="you@example.com">
+
+    <label for="phone">Phone number</label>
+    <input type="tel" id="phone" required placeholder="0244000000">
+
+    <label for="emergencyContact">Emergency contact (optional)</label>
+    <input type="tel" id="emergencyContact" placeholder="A relative or friend's number">
+
+    <label for="password">Password</label>
+    <input type="password" id="password" required minlength="6" placeholder="At least 6 characters">
+
+    <button type="submit" class="btn btn-primary btn-block mt-lg">Create account</button>
+  </form>
+
+  <p class="form-note">Already have an account? <a href="login.html">Log in</a></p>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+document.getElementById('registerForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = {
+    fullName: document.getElementById('fullName').value.trim(),
+    email: document.getElementById('email').value.trim(),
+    phone: document.getElementById('phone').value.trim(),
+    emergencyContact: document.getElementById('emergencyContact').value.trim(),
+    password: document.getElementById('password').value,
+  };
+
+  try {
+    const data = await apiRequest('/api/auth/register', 'POST', payload);
+    saveSession(data.token, data.user);
+    showAlert('alertBox', 'Account created! Redirecting…', 'success');
+    setTimeout(() => window.location.href = 'index.html', 700);
+  } catch (err) {
+    showAlert('alertBox', err.message, 'error');
+  }
+});
+</script>
+</body>
+</html>

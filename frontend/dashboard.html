@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Smart Emergency Response</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="dot"></span> Smart Emergency Response</div>
+  <nav></nav>
+</div>
+
+<div class="container wide">
+
+  <h1>Responder Dashboard</h1>
+  <div id="accessNotice" class="alert alert-error hidden">
+    This page is for admins and responders only. <a href="login.html">Log in</a> with a staff account.
+  </div>
+
+  <div id="dashboardContent" class="hidden">
+
+    <div class="stat-grid" id="statGrid">
+      <div class="stat-card"><div class="value" id="statTotal">–</div><div class="label">Total Emergencies</div></div>
+      <div class="stat-card"><div class="value" id="statUnresolved">–</div><div class="label">Unresolved</div></div>
+      <div class="stat-card"><div class="value" id="statCritical">–</div><div class="label">Critical &amp; Open</div></div>
+      <div class="stat-card"><div class="value" id="statAvgTime">–</div><div class="label">Avg. Response (min)</div></div>
+    </div>
+
+    <div class="panel">
+      <h3>Most Common Emergency Types</h3>
+      <div id="typeBreakdown">Loading…</div>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <h3 style="margin:0;">Live Emergencies</h3>
+      </div>
+
+      <div class="filters mt-lg">
+        <select id="filterStatus">
+          <option value="">All statuses</option>
+          <option value="reported">Reported</option>
+          <option value="accepted">Accepted</option>
+          <option value="responding">Responding</option>
+          <option value="resolved">Resolved</option>
+        </select>
+        <select id="filterType">
+          <option value="">All types</option>
+          <option value="medical">Medical</option>
+          <option value="fire">Fire</option>
+          <option value="security">Security</option>
+          <option value="accident">Accident</option>
+          <option value="flood">Flood</option>
+          <option value="other">Other</option>
+        </select>
+        <select id="filterPriority">
+          <option value="">All priorities</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <button class="btn btn-outline btn-sm" id="refreshBtn">Refresh</button>
+      </div>
+
+      <div id="alertBox"></div>
+
+      <div style="overflow-x:auto;">
+      <table id="emergencyTable">
+        <thead>
+          <tr>
+            <th>Type</th><th>Priority</th><th>Reporter</th><th>Time</th><th>Status</th><th>Location</th><th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="emergencyTableBody">
+          <tr><td colspan="7" class="text-center">Loading…</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- Simple location-detail panel shown when "View" is clicked -->
+    <div class="panel hidden" id="detailPanel">
+      <h3 id="detailTitle">Emergency Location</h3>
+      <div id="detailMap"></div>
+      <button class="btn btn-outline btn-sm mt-lg" id="closeDetailBtn">Close</button>
+    </div>
+
+  </div>
+</div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="js/app.js"></script>
+<script src="js/map.js"></script>
+<script>
+const session = getSession();
+const isStaff = session && (session.user.role === 'admin' || session.user.role === 'responder');
+
+if (!isStaff) {
+  document.getElementById('accessNotice').classList.remove('hidden');
+} else {
+  document.getElementById('dashboardContent').classList.remove('hidden');
+  loadStats();
+  loadEmergencies();
+}
+
+['filterStatus', 'filterType', 'filterPriority'].forEach((id) => {
+  document.getElementById(id).addEventListener('change', loadEmergencies);
+});
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  loadStats();
+  loadEmergencies();
+});
+document.getElementById('closeDetailBtn').addEventListener('click', () => {
+  document.getElementById('detailPanel').classList.add('hidden');
+});
+
+async function loadStats() {
+  try {
+    const [summary, byType, responseTime] = await Promise.all([
+      apiRequest('/api/stats/summary'),
+      apiRequest('/api/stats/by-type'),
+      apiRequest('/api/stats/response-time'),
+    ]);
+
+    document.getElementById('statTotal').textContent = summary.total;
+    document.getElementById('statUnresolved').textContent = summary.unresolved;
+    document.getElementById('statCritical').textContent = summary.criticalOpen;
+    document.getElementById('statAvgTime').textContent = responseTime.averageMinutes ?? '—';
+
+    const breakdown = document.getElementById('typeBreakdown');
+    if (byType.length === 0) {
+      breakdown.textContent = 'No emergencies reported yet.';
+    } else {
+      const max = Math.max(...byType.map((t) => t.count));
+      breakdown.innerHTML = byType.map((t) => `
+        <div style="margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:3px;">
+            <span style="text-transform:capitalize;">${t.type}</span><span>${t.count}</span>
+          </div>
+          <div style="background:var(--border); border-radius:4px; height:8px;">
+            <div style="background:var(--gold); width:${(t.count / max) * 100}%; height:8px; border-radius:4px;"></div>
+          </div>
+        </div>
+      `).join('');
+    }
+  } catch (err) {
+    showAlert('alertBox', err.message, 'error');
+  }
+}
+
+async function loadEmergencies() {
+  const status = document.getElementById('filterStatus').value;
+  const type = document.getElementById('filterType').value;
+  const priority = document.getElementById('filterPriority').value;
+
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (type) params.set('type', type);
+  if (priority) params.set('priority', priority);
+
+  const tbody = document.getElementById('emergencyTableBody');
+  tbody.innerHTML = `<tr><td colspan="7" class="text-center">Loading…</td></tr>`;
+
+  try {
+    const rows = await apiRequest('/api/emergencies?' + params.toString());
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center">No emergencies match these filters.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = rows.map((r) => `
+      <tr>
+        <td style="text-transform:capitalize;">${typeIcon(r.type)} ${r.type}</td>
+        <td class="priority-${r.priority}">${r.priority.toUpperCase()}</td>
+        <td>${r.reporter_name}<br><span style="color:var(--text-muted); font-size:0.8rem;">${r.reporter_phone}</span></td>
+        <td>${new Date(r.created_at).toLocaleString()}</td>
+        <td><span class="badge badge-${r.status}">${r.status}</span></td>
+        <td><button class="btn btn-outline btn-sm" onclick="viewLocation(${r.latitude}, ${r.longitude}, '${r.type}')">View</button></td>
+        <td>${statusActionButton(r)}</td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Could not load emergencies.</td></tr>`;
+    showAlert('alertBox', err.message, 'error');
+  }
+}
+
+function typeIcon(type) {
+  return { medical: '🚑', fire: '🔥', security: '🚔', accident: '🚗', flood: '🌊', other: '⚠️' }[type] || '⚠️';
+}
+
+// Returns the button for the *next* logical status, or nothing if resolved
+function statusActionButton(r) {
+  const nextStatus = { reported: 'accepted', accepted: 'responding', responding: 'resolved' }[r.status];
+  if (!nextStatus) return '<span style="color:var(--text-muted); font-size:0.8rem;">Done</span>';
+  const label = { accepted: 'Accept', responding: 'Start Responding', resolved: 'Mark Resolved' }[nextStatus];
+  return `<button class="btn btn-gold btn-sm" onclick="updateStatus(${r.id}, '${nextStatus}')">${label}</button>`;
+}
+
+async function updateStatus(id, status) {
+  try {
+    await apiRequest(`/api/emergencies/${id}/status`, 'PATCH', { status });
+    loadEmergencies();
+    loadStats();
+  } catch (err) {
+    showAlert('alertBox', err.message, 'error');
+  }
+}
+
+let detailMapInstance = null;
+function viewLocation(lat, lng, type) {
+  document.getElementById('detailPanel').classList.remove('hidden');
+  document.getElementById('detailTitle').textContent = `${type[0].toUpperCase() + type.slice(1)} Emergency Location`;
+  if (detailMapInstance) { detailMapInstance.remove(); }
+  detailMapInstance = createViewMap('detailMap', lat, lng, type);
+  document.getElementById('detailPanel').scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
